@@ -57,7 +57,7 @@ node tests/run-current-audit.mjs
 
 ## 公开网页与开源部署
 
-计划发布地址：[开始学习](https://weiruijiao0.github.io/jingjing-youtiao/#/today)。上线状态以 GitHub Actions 的成功部署及网页实际可访问为准。
+在线使用：[开始学习](https://weiruijiao0.github.io/jingjing-youtiao/#/today)。无需注册，打开即可使用。部署与验收记录见 [发布验收](docs/DEPLOYMENT.md)。
 
 所有人打开已部署的网页即可开始使用，无需注册账号。该版本没有账号密码登录、云端同步或后台服务。每个人的记录分别保存在自己当前设备、浏览器和网站地址下，彼此不共享。
 
