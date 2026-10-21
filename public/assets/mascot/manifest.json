@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "description": "内置 image 参考用户照片生成的 Q 版伙伴。七种状态共用插画，通过陪伴文案表达。网站不直接使用原始照片。",
+  "states": {
+    "welcome": "companion-chibi.png",
+    "studying": "companion-chibi.png",
+    "task_done": "companion-chibi.png",
+    "happy": "companion-chibi.png",
+    "rest_reminder": "companion-chibi.png",
+    "chest_open": "companion-chibi.png",
+    "stage_done": "companion-chibi.png"
+  }
+}
