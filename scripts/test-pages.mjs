@@ -51,6 +51,7 @@ try {
   await expect(page.locator('.coach-materials')).toHaveCount(0);
   await coach().getByLabel('合上资料，写出本条关键点').fill('发布验证隔离草稿，不用于能力判断');
   await coach().getByRole('button', { name: '保存小段，先歇一下', exact: true }).click();
+  await expect(coach().getByRole('button', { name: '继续已保存的今日领学', exact: true })).toBeVisible();
   await page.reload();
   await coach().getByLabel('合上资料，写出本条关键点').or(coach().getByRole('button', { name: '继续已保存的今日领学', exact: true })).first().waitFor();
   if (await coach().getByRole('button', { name: '继续已保存的今日领学', exact: true }).count()) await coach().getByRole('button', { name: '继续已保存的今日领学', exact: true }).click();
