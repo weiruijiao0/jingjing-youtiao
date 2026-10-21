@@ -1,0 +1,43 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {chromium,expect}=require('@playwright/test');
+const d=JSON.parse(fs.readFileSync('public/course/catalog.json','utf8'));
+(async()=>{
+ const b=await chromium.launch({channel:'msedge',headless:true}),p=await b.newPage(),errors=[];
+ p.on('pageerror',e=>errors.push(e.message));
+ const get=prefix=>d.questions.find(q=>q.id.startsWith(prefix)),q=get('cf834'),stool=get('2614c'),held=get('b86d9');
+ const state=()=>p.evaluate(async()=>await(await import('/src/learningStore.ts')).loadLearning());
+ const seed=async(question,response)=>{await p.evaluate(async args=>{const m=await import('/src/learningStore.ts'),s=await m.loadLearning();await m.saveLearning({...s,courseDraft:{question:args.id,response:args.response}},s.revision)},{id:question.id,response});await p.reload()};
+ try{
+  await p.goto('http://127.0.0.1:5185/#/course');await p.getByRole('heading',{name:'按考纲，逐章学与练。'}).waitFor();
+  await expect(p.locator('.question-review-summary summary')).toContainText('1052 题已对照，631 题暂移出训练');
+  await p.locator('.question-review-summary summary').click();await expect(p.locator('.question-review-summary')).toContainText('此前 44 道阳明');
+  await expect(p.locator('.question-review-summary')).toContainText('未处理 0 道');
+  await p.evaluate(async id=>{const m=await import('/src/learningStore.ts'),s=await m.loadLearning();await m.saveLearning({...s,courseAnswers:[{id:'pre-correction-score',question:id,response:'A',score:0,at:new Date().toISOString(),revealed:true}]},s.revision)},q.id);
+  await seed(q,'A,B,C,D');await expect(p.locator('.objective-option-review')).toHaveCount(0);await expect(p.locator('.original-question-record')).toHaveCount(0);
+  await p.getByRole('button',{name:'提交并查看解析',exact:true}).click();
+  await expect(p.locator('.objective-option-review')).toContainText('所选254的原文方证');
+  await p.locator('.original-question-record summary').click();await expect(p.locator('.original-question-record')).toContainText(q.sourceCheck.original.options[1].text);
+  const citation=p.locator('.course-question .feedback details').filter({has:p.locator('summary').filter({hasText:'已定位引用：238'})});
+  await citation.locator('summary').click();
+  await expect(citation.locator('a[href$="0260.jpg"]')).toBeVisible();await expect(citation.locator('a[href$="0261.jpg"]')).toBeVisible();
+  await seed(stool,'C');await expect(p.locator('.course-question .answer-options')).toContainText('也可有热结旁流');
+  await expect(p.locator('.objective-option-review')).toHaveCount(0);
+  await p.getByRole('button',{name:'提交并查看解析',exact:true}).click();
+  await expect(p.locator('.objective-option-review')).toContainText('避免绝对不大便');
+  await p.locator('.original-question-record summary').click();await expect(p.locator('.original-question-record')).toContainText(stool.sourceCheck.original.options[2].text);
+  await seed(held,'D');await expect(p.locator('.held-question')).toContainText('两个未列项');await expect(p.locator('.course-question')).toHaveCount(0);
+  assert.equal((await state()).courseDraft.response,'D');
+  await p.evaluate(async ids=>{const m=await import('/src/learningStore.ts'),s=await m.loadLearning();await m.saveLearning({...s,courseDraft:null,courseExams:[{id:'yangming-old-exam',questionIds:ids,startedAt:new Date().toISOString(),submittedAt:null,responses:{[ids[0]]:'D',[ids[1]]:'C'}}]},s.revision)},[held.id,stool.id]);
+  await p.reload();await expect(p.locator('.course-exam')).toContainText('本卷旧题已暂移出训练');await expect(p.locator('.objective-option-review')).toHaveCount(0);
+  await p.getByRole('button',{name:'检查并交卷',exact:true}).click();await p.getByRole('button',{name:'确认交卷',exact:true}).click();
+  await p.getByText('整套限时演练与交卷订正',{exact:true}).click();
+  await expect(p.locator('.course-exam .feedback')).toContainText('客观题 1/1 分');
+  const details=p.locator('.course-exam .feedback > details');await details.nth(0).locator('summary').click();await expect(details.nth(0)).not.toContainText('资料答案');
+  await details.nth(1).locator('summary').first().click();await expect(p.locator('.course-exam .objective-option-review')).toContainText('避免绝对不大便');
+  const s=await state();assert.equal(s.courseAnswers.find(a=>a.id==='pre-correction-score').score,0);
+  assert.equal(s.courseAnswers.find(a=>a.id===`yangming-old-exam-${held.id}`).score,null);assert.equal(s.courseExams[0].responses[held.id],'D');
+  await p.setViewportSize({width:360,height:800});assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
+  const checks=['latest 44/32/12 disposition and all 100 dispositions visible','closed-book reasons and original hidden','254 syllabus adaptation explained after submit','original options retained','260 and 261 source pages open','stool passage no longer excludes腑实','old absolute option retained','held draft kept without training','old exam held answer ungraded','held key hidden','old score unchanged','mobile width','no page errors'];
+  fs.writeFileSync('../verification/current-audit/yangming-review-ui.json',JSON.stringify({passed:true,checks},null,2));console.log(`${checks.length} Yangming-review UI checks passed`);
+ }finally{await b.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

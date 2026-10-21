@@ -1,0 +1,26 @@
+const {chromium,expect}=require('@playwright/test');
+(async()=>{const b=await chromium.launch({channel:'msedge',headless:true});const p=await b.newPage({viewport:{width:390,height:850}});try{
+await p.goto('http://127.0.0.1:5185/#/course');
+await p.getByRole('button',{name:'开始本轮逐条学习'}).waitFor();
+await p.setViewportSize({width:1280,height:850});await p.screenshot({path:'../verification/全国三级逐条学习.png'});await p.setViewportSize({width:390,height:850});
+await p.getByRole('button',{name:'开始本轮逐条学习'}).click();
+await expect(p.getByText('本轮含当前还剩 4 条。',{exact:false})).toBeVisible();
+await p.getByRole('button',{name:'读好了，隐藏资料开始回忆'}).click();
+await expect(p.locator('.study-materials')).toHaveCount(0);
+await expect(p.getByRole('progressbar',{name:'本轮领学进度'})).toHaveAttribute('value','0');
+await p.getByLabel('合上原文，写出本条要点').fill('法于阴阳，和于术数，食饮有节，起居有常，不妄作劳。');
+await p.waitForTimeout(800);await p.reload();
+await expect(p.locator('.study-materials')).toHaveCount(0);
+await expect(p.getByLabel('合上原文，写出本条要点')).toHaveValue(/法于阴阳/);
+await p.getByRole('button',{name:'完成回忆，展开对照'}).click();
+await expect(p.locator('.study-materials')).toHaveCount(1);
+await expect(p.getByLabel('合上原文，写出本条要点')).toBeDisabled();
+await p.getByRole('button',{name:'有漏项 · 明天复习'}).click();
+await expect(p.getByRole('status').filter({hasText:'回忆已保存'})).toBeVisible();
+await p.reload();await expect(p.locator('.requirement-session h3')).toHaveText(/养生外避邪气/);
+const state=await p.evaluate(async()=>{const m=await import('/src/learningStore.ts');return m.loadLearning()});
+if(state.courseRecall.length!==1||state.courseRecall[0].confidence!=='unsure')throw Error('Recall not saved');
+if(state.courseRecallDraft.queue.length!==3)throw Error('Queue not resumed');
+if(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile overflow');
+console.log('Requirement UI: 4-item budget, draft reload, save, next-item resume and mobile passed');
+}finally{await b.close()}})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1,0 +1,16 @@
+const {chromium,expect}=require('@playwright/test');
+const fs=require('node:fs/promises');
+(async()=>{const b=await chromium.launch({channel:'msedge',headless:true});const context=await b.newContext({viewport:{width:1280,height:900}});const p=await context.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));try{
+await p.goto('http://127.0.0.1:5185/#/course');await expect(p.getByRole('heading',{name:'按考纲，逐章学与练。'})).toBeVisible();await expect(p.locator('.chapter-list button')).toHaveCount(106);
+await p.getByLabel('查找章节或考点').fill('厥阴');await p.locator('.chapter-list button').filter({hasText:'伤寒论 · 厥阴'}).click();await p.getByRole('button',{name:'从未做题开始本章练习'}).click();await expect(p.locator('.course-question')).toBeVisible();await p.locator('.course-question .answer-options button').first().click();await p.waitForTimeout(650);await p.reload();await expect(p.locator('.course-question button[aria-pressed=true]')).toHaveCount(1);await expect(p.getByRole('heading',{name:'我的 30 天学习计划',exact:true})).toBeVisible();await expect(p.locator('.plan-days progress')).toHaveCount(30);await expect(p.locator('.study-materials')).toHaveCount(0);await p.locator('.plan-overview').screenshot({path:'../verification/有答题草稿时的30天计划.png'});await p.getByRole('button',{name:'保存练习并返回领学计划'}).click();await expect(p.getByRole('heading',{name:'逐条原文与回忆',exact:true})).toBeVisible();await p.reload();await expect(p.locator('.course-question button[aria-pressed=true]')).toHaveCount(1);await expect(p.getByRole('heading',{name:'我的 30 天学习计划',exact:true})).toBeVisible();await p.getByRole('button',{name:'提交并查看解析'}).click();await expect(p.locator('.course-question .feedback')).toBeVisible();
+const bank=JSON.parse(await fs.readFile('public/course/catalog.json','utf8'));const multi=bank.questions.find(q=>q.type==='X型题'&&!q.professionalHold),essay=bank.questions.find(q=>q.subjective&&!q.professionalHold);
+for(const q of [multi,essay]) {
+ await p.evaluate(async id=>{const m=await import('/src/learningStore.ts');const s=await m.loadLearning();await m.saveLearning({...s,courseDraft:{question:id,response:''}},s.revision)},q.id);await p.reload();
+ if(q.subjective) {await p.getByRole('textbox',{name:'先写下你的分析'}).fill('独立作答：先分析主症、病机，再对照治法。');}
+ else for(const id of q.answers)await p.locator('.course-question .answer-options button').filter({hasText:new RegExp('^'+id+'\\.')}).click();
+ await p.getByRole('button',{name:'提交并查看解析'}).click();await expect(p.getByText(q.subjective?'已保存独立作答，请逐点对照资料解析':'与资料答案一致',{exact:true})).toBeVisible();
+}
+const records=await p.evaluate(async()=>{const m=await import('/src/learningStore.ts');return(await m.loadLearning()).courseAnswers});if(records.length!==3||records.at(-1).score!==null)throw Error('record mismatch');
+await p.screenshot({path:'../verification/三级章节练习.png',fullPage:true});await p.setViewportSize({width:360,height:800});if(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('overflow');
+if(errors.length)throw Error(errors.join('\n'));await fs.writeFile('../verification/course-ui-results.json',JSON.stringify({passed:true,checks:['106章节筛选','草稿重载','客观提交','多选集合判分','主观独立作答无自动成绩','三条持久记录','移动端无横向溢出']},null,2));console.log('7 course UI checks passed');
+}finally{await b.close()}})().catch(e=>{console.error(e);process.exitCode=1});

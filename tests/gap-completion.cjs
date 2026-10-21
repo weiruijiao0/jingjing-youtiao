@@ -1,0 +1,116 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const crypto=require('node:crypto');
+const {chromium,expect}=require('@playwright/test');
+const read=p=>JSON.parse(fs.readFileSync(p,'utf8'));
+const d=read('public/course/catalog.json'),a=d.gapCompletionAudit;
+require('./historical-catalog.cjs').readHistoricalCatalog(d); // Validate the live addition; browser expectations below continue using LIVE.
+const gaps=read('../../../work/remaining-536-requirements.json');
+const topics=read('../../../work/remaining-185-locators.json');
+const sameSet=(actual,expected)=>assert.deepEqual([...actual].sort(),[...expected].sort());
+sameSet(a.completedDirectQuestionRequirements,gaps);
+sameSet(a.completedTopicLocations,topics);
+assert.deepEqual(a.withoutDirectQuestions,[]);assert.deepEqual(a.topicLocationsPending,[]);
+assert.equal(gaps.length,536);assert.equal(topics.length,185);
+assert.equal(d.questions.length,2484);assert.equal(a.independentExpertReviews,0);
+assert.equal(a.examDifficultyCalibrated,false);assert.equal(d.itemReviewAudit.newQuestions,64);
+const bank=new Map(d.questions.map(q=>[q.id,q]));
+assert.equal(bank.size,d.questions.length);
+for(const c of d.courses)for(const r of c.requirements){
+ const g=d.requirementGuides[r.id];assert.equal(g.scope,r.text);
+ assert.ok(g.directQuestionIds.length);assert.ok(g.directQuestionIds.every(id=>bank.has(id)));
+ if(!gaps.includes(r.id))continue;
+ const id=`special-${r.id}-written`,q=bank.get(id);
+ assert.ok(c.questionIds.includes(id));assert.equal(d.requirementReadings[r.id].questionIds[0],id);
+ assert.deepEqual(q.requirementIds,[r.id]);assert.equal(q.assessmentGroup,r.id);
+ assert.equal(q.subjective,true);assert.equal(q.assessmentOnly,true);
+ assert.equal(q.fullRequirementAssessment,false);assert.ok(q.rubric.length);
+ if(['written128-17','written128b-18','written128c-19','written152-20'].includes(q.authoredReview?.batch)){assert.equal(q.rubric.reduce((n,r)=>n+r.points,0),10);assert.ok(q.rubric.every(r=>typeof r.criterion==='string'&&r.criterion.trim()&&r.points>0))}else assert.ok(q.rubric.every(r=>r.evidence.length>2));assert.ok(q.explanation.length>40);
+ assert.ok(q.evidenceLinks.length);assert.ok(q.reference.includes(r.id));
+ assert.equal(d.questions.filter(v=>v.assessmentGroup===r.id).length,1+d.professionalSupplementAudit.questionIds.filter(id=>bank.get(id).assessmentGroup===r.id).length);
+ for(const e of q.evidenceLinks)assert.ok(fs.existsSync(e.source==='F0007'?`public/library/F0007/${String(e.page).padStart(4,'0')}.jpg`:`public/library/${e.source}.pdf`));
+}
+for(const id of topics){
+ const g=d.requirementGuides[id],p=g.locationProof;
+ assert.equal(g.locator,'topic-paragraph-checked');assert.equal(p.independentExpertReview,false);
+ assert.equal(p.imageTranscriptionCertified,false);assert.ok(p.matches.length);
+ assert.ok(g.pages.every(n=>d.requirementReadings[id].newGuidePages.includes(n)));
+ for(const e of p.matches){
+  const t=read(`../../../work/ocr-F0007/${String(e.page).padStart(4,'0')}.json`).text.normalize('NFKC').replace(/\s+/gu,'');
+  assert.ok(t.includes(e.anchor));assert.equal(crypto.createHash('sha256').update(t).digest('hex'),e.pageTextSha256);
+ }
+}
+assert.deepEqual(d.requirementGuides.K0305.pages,[493]);
+assert.deepEqual(d.requirementGuides.K0090.pages,[156]);
+assert.deepEqual(d.requirementGuides.K0620.pages,[54]);
+assert.equal(d.requirementGuides.K0620.source,'F0012');
+const regional=bank.get('special-K0598-written');
+assert.equal(regional.authoredReview.batch,'written152-20');
+assert.match(regional.authoredReview.original.explanation,/西北之气散而寒之/);
+assert.match(regional.authoredReview.original.explanation,/东南之气收而温之/);
+assert.match(regional.explanation,/西北.*肤腠密.*食热/);
+assert.match(regional.explanation,/散以发散外寒.*寒以寒凉清内热/);
+assert.match(regional.explanation,/东南.*肤疏腠开.*食冷/);
+assert.match(regional.explanation,/收以固表阳.*温以温里祛寒/);
+assert.match(regional.explanation,/同病.*差别.*异治/);
+assert.ok(!bank.get('special-K0353-written').explanation.includes('亢害承制'));
+const distribution=bank.get('special-K0069-written');
+assert.equal(distribution.authoredReview.batch,'written152-20');
+assert.match(distribution.authoredReview.original.explanation,/偏聚处为实/);
+assert.match(distribution.explanation,/偏聚部位为实.*另一部位.*不足为虚/);
+assert.match(distribution.explanation,/输布不均/);
+assert.match(distribution.explanation,/邪气盛则实精气夺则虚/);
+assert.deepEqual(d.requirementGuides.K0553.pages,[36,37]);
+assert.deepEqual(d.requirementGuides.K0566.pages,[60,61]);
+sameSet(topics,Object.values(d.requirementGuides).filter(g=>g.locationProof).map(g=>g.requirement));
+(async()=>{
+ const b=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const p=await b.newPage({viewport:{width:390,height:850}});
+  await p.goto('http://127.0.0.1:5185/#/course');
+  await expect(p.getByRole('progressbar',{name:'考纲直接专项题覆盖',exact:true})).toHaveAttribute('value','712');
+  await expect(p.getByRole('progressbar',{name:'本轮主题段落精查',exact:true})).toHaveAttribute('value','185');
+  await p.getByText('查看新增专项题（536 条）',{exact:true}).click();
+  await expect(p.locator('.gap-topic')).toHaveCount(12);
+  const initial=await p.locator('.gap-topic h3').first().textContent();
+  await p.getByRole('button',{name:'下一页专项',exact:true}).click();
+  assert.notEqual(await p.locator('.gap-topic h3').first().textContent(),initial);
+  await p.getByLabel('专项经典',{exact:true}).selectOption('温病学');
+  const titles=await p.locator('.gap-topic h3').allTextContents();
+  assert.ok(titles.length&&titles.every(t=>t.includes('温病学')));
+  await p.getByLabel('专项经典',{exact:true}).selectOption('全部');
+  await p.getByLabel('查找专项考点',{exact:true}).fill('K0001');
+  await expect(p.locator('.gap-topic')).toHaveCount(1);
+  await p.locator('.gap-topic').getByRole('button',{name:'开始或继续本条专项'}).click();
+  await expect(p.locator('.course-question h2')).toHaveText(bank.get('special-K0001-written').stem);
+  await expect(p.locator('.course-question .feedback')).toHaveCount(0);
+  await expect(p.locator('.source-teaching')).toHaveCount(0);
+  await expect(p.locator('.review-overview')).toHaveCount(0);
+  await expect(p.getByRole('link',{name:'核对引用原页'})).toHaveCount(0);
+  await expect(p.getByRole('button',{name:'提交并查看解析',exact:true})).toBeDisabled();
+  await p.getByLabel('先写下你的分析').fill('专项草稿：法于阴阳，起居有常。');
+  await p.waitForTimeout(750);await p.reload();
+  await expect(p.getByLabel('先写下你的分析')).toHaveValue('专项草稿：法于阴阳，起居有常。');
+  await expect(p.locator('.course-question .feedback')).toHaveCount(0);
+  await p.getByRole('button',{name:'提交并查看解析',exact:true}).click();
+  await expect(p.locator('.course-question .feedback')).toContainText(bank.get('special-K0001-written').explanation);
+  await expect(p.locator('.written-answer-points')).toContainText('不自动打分');
+  await expect(p.locator('.written-answer-points li')).toHaveText(bank.get('special-K0001-written').rubric.map(r=>r.criterion));
+  await p.locator('.course-question .feedback summary').first().click();
+  await expect(p.getByRole('link',{name:'核对引用原页'}).first()).toHaveAttribute('href',/F0007\/0010.jpg$/);
+  const saved=await p.evaluate(async()=>{const m=await import('/src/learningStore.ts');return await m.loadLearning()});
+  const records=saved.courseAnswers.filter(v=>v.question==='special-K0001-written');
+  assert.equal(records.length,1);assert.equal(records[0].score,null);
+  assert.equal(saved.courseRecall.length,0);
+  await expect(p.getByRole('progressbar',{name:'新增专项简答作答进度',exact:true})).toHaveAttribute('value','1');
+  await expect(p.getByRole('button',{name:'继续下一题',exact:true})).toHaveCount(0);
+  await p.getByRole('button',{name:'本组已到末尾，返回章节'}).click();
+  await p.getByText('查看新增专项题（536 条）',{exact:true}).click();
+  await p.getByLabel('查找专项考点',{exact:true}).fill('K0001');
+  await expect(p.locator('.gap-topic')).toContainText('书面作答已写 1 / 1');
+  assert.ok(!await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth));
+  await p.locator('.review-overview').screenshot({path:'../verification/536专项题与185段落核对.png'});
+  fs.writeFileSync('../verification/gap-completion-results.json',JSON.stringify({passed:true,requirements:712,newQuestions:536,preciseLocations:185,checks:['冻结ID集合完全补齐','答案出处与原文段落哈希','考纲范围不改写','已知定位和答案纠错','检索筛选分页','闭卷答案隐藏','草稿恢复','主观题不自动判分或掌握','进度持久化','390px布局']},null,2));
+  console.log('536 source-backed questions and 185 precise locators: data, scope, closed answers, draft, progress and mobile checks passed');
+ }finally{await b.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

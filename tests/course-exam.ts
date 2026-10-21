@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {freshState,validateState,makeEnvelope,readEnvelope,mergeRestore} from '../src/learning';
+import {assembleCourseExam,examBlueprint,examObjectiveScore} from '../src/examEngine';
+const d=JSON.parse(readFileSync('public/course/catalog.json','utf8'));const s=freshState();
+const result=assembleCourseExam(d.questions,s,()=>0.4);assert.deepEqual(result.missing,[]);assert.equal(result.questionIds.length,91);
+const qs=result.questionIds.map(id=>d.questions.find((q:any)=>q.id===id));
+assert.ok(qs.every(q=>!q.assessmentOnly));
+// A specialty short answer must stay out even if a future edit changes its type.
+const practice=d.questions.find((q:any)=>q.id.startsWith('special-'));
+const guarded=assembleCourseExam([{...practice,type:'论述题'},...d.questions.filter((q:any)=>q.id!==practice.id)],s,()=>0.4);
+assert.ok(!guarded.questionIds.includes(practice.id));
+assert.equal(new Set(qs.map(q=>q.family)).size,91);
+for(const [type,count]of examBlueprint)assert.equal(qs.filter(q=>q.type===type||(type==='X型题'&&q.type==='多选题')).length,count);
+for(const q of qs)assert.equal(examObjectiveScore(q,q.answers.join(',')),q.subjective?null:1);
+s.courseExposures=[{question:qs[0].id,at:new Date().toISOString()}];
+assert.ok(!assembleCourseExam(d.questions,s,()=>0.4).questionIds.some(id=>d.questions.find((q:any)=>q.id===id).family===qs[0].family));
+s.courseExams=[{id:'exam-1',questionIds:result.questionIds,responses:{[qs[0].id]:'A'},startedAt:new Date().toISOString(),submittedAt:null}];
+const second=assembleCourseExam(d.questions,s,()=>0.4);
+assert.ok(!second.questionIds.some(id=>qs.some(q=>q.family===d.questions.find((v:any)=>v.id===id).family)));
+assert.ok(assembleCourseExam([],s).missing.length);assert.equal(assembleCourseExam([],s).questionIds.length,0);
+const restored=validateState(await readEnvelope(await makeEnvelope(s),'archive'));assert.deepEqual(restored.courseExams,s.courseExams);assert.deepEqual(restored.courseExposures,s.courseExposures);assert.equal(mergeRestore(s,restored).courseExams.length,1);
+assert.equal(d.lessons.length,846);assert.ok(d.lessons.every((l:any)=>l.original&&l.summary&&l.page<=l.endPage));
+assert.ok(d.requirementReadings.K0199.sourceNote);assert.deepEqual(d.requirementReadings.K0199.articlePages,d.requirementReadings.K0197.articlePages);
+console.log('Exam blueprint, family separation, grading, persistence and source lesson checks passed');

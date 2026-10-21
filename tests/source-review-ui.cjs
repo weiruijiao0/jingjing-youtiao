@@ -1,0 +1,57 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {chromium,expect}=require('@playwright/test');
+const d=JSON.parse(fs.readFileSync('public/course/catalog.json','utf8'));
+const qid='a1392cf04c022d65d1d349c384958830d4517477ff578f2329d14d531a268954';
+(async()=>{
+ const b=await chromium.launch({channel:'msedge',headless:true});
+ const p=await b.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ const seed=async(question,response)=>{await p.evaluate(async args=>{const m=await import('/src/learningStore.ts');const s=await m.loadLearning();await m.saveLearning({...s,courseDraft:{question:args.question,response:args.response}},s.revision)},{question,response});await p.reload()};
+ try{
+  await p.goto('http://127.0.0.1:5185/#/course');await p.getByRole('heading',{name:'按考纲，逐章学与练。'}).waitFor();
+  await p.locator('.question-review-summary summary').click();await expect(p.locator('.question-review-summary')).toContainText('41 道已逐段对照');await expect(p.locator('.question-review-summary')).toContainText('出处核对已处理完');
+  await seed(qid,'心阳虚，温通心阳、平冲降逆。');
+  await expect(p.locator('.course-question .feedback')).toHaveCount(0);await expect(p.locator('.course-question')).not.toContainText('教材核对');
+  await p.getByRole('button',{name:'提交并查看解析',exact:true}).click();
+  await expect(p.locator('.course-question .feedback')).toContainText('治宜温通心阳、平冲降逆');
+  await expect(p.locator('.course-question .feedback')).toContainText('教材核对');
+  await p.locator('.course-question .feedback summary').filter({hasText:'第117条'}).click();
+  await expect(p.locator('.course-question .feedback a[href$="0220.jpg"]')).toBeVisible();
+  const finalId='30dcf24c258b8db1e003e5b47f6159c45d895cbb1f747acb751da1e31733de15';
+  await seed(finalId,'我先闭卷写，芫花甘遂大戟，大枣送服。');
+  await expect(p.locator('.written-answer-points')).toHaveCount(0);
+  await expect(p.locator('.course-question')).not.toContainText('各别为散');
+  await p.getByRole('button',{name:'提交并查看解析',exact:true}).click();
+  await expect(p.locator('.written-answer-points')).toContainText('表解乃可攻');
+  await expect(p.locator('.written-answer-points')).toContainText('不自动打分');
+  const written=await p.evaluate(async()=>await(await import('/src/learningStore.ts')).loadLearning());
+  assert.equal(written.courseAnswers.find(a=>a.question===finalId).score,null);
+  await p.locator('.course-question .feedback summary').filter({hasText:'第152条'}).click();
+  await expect(p.locator('.course-question .feedback a[href$="0233.jpg"]')).toBeVisible();
+  const held=d.questions.find(q=>q.professionalHold);
+  await seed(held.id,'我的旧答案仍在');
+  await expect(p.locator('.held-question')).toContainText(held.professionalHold.reason);
+  await expect(p.locator('.course-question')).toHaveCount(0);
+  await p.getByRole('button',{name:'返回领学计划',exact:true}).click();
+  await expect(p.getByRole('heading',{name:'我的 30 天学习计划',exact:true})).toBeVisible();
+  const stored=await p.evaluate(async()=>await(await import('/src/learningStore.ts')).loadLearning());
+  assert.equal(stored.courseDraft.question,held.id);assert.equal(stored.courseDraft.response,'我的旧答案仍在');assert.ok(stored.courseAnswers.some(a=>a.question===qid));
+  // An old, already saved exam keeps its identity and written draft, with held content hidden.
+  await p.evaluate(async id=>{const m=await import('/src/learningStore.ts');const s=await m.loadLearning();await m.saveLearning({...s,courseExams:[{id:'old-scope-exam',questionIds:[id],startedAt:new Date().toISOString(),submittedAt:null,responses:{[id]:'卷内原草稿'}}]},s.revision)},held.id);
+  await p.reload();await expect(p.locator('.course-exam')).toContainText('本卷旧题已暂移出训练');
+  await expect(p.locator('.course-exam')).not.toContainText(held.explanation);
+  const old=await p.evaluate(async()=>await(await import('/src/learningStore.ts')).loadLearning());assert.equal(old.courseExams[0].responses[held.id],'卷内原草稿');
+  await p.evaluate(async id=>{const m=await import('/src/learningStore.ts');const s=await m.loadLearning();await m.saveLearning({...s,courseDraft:null,courseExams:[...s.courseExams.map(e=>({...e,submittedAt:new Date().toISOString()})),{id:'final-22-exam',questionIds:[id],startedAt:new Date().toISOString(),submittedAt:null,responses:{[id]:'独立能力分析'}}]},s.revision)},finalId);
+  await p.reload();await expect(p.locator('.course-exam .written-answer-points')).toHaveCount(0);
+  await expect(p.locator('.course-exam')).not.toContainText('各别为散');
+  await p.getByRole('button',{name:'检查并交卷',exact:true}).click();await p.getByRole('button',{name:'确认交卷',exact:true}).click();
+  await p.getByText('整套限时演练与交卷订正',{exact:true}).click();
+  await p.locator('.course-exam .feedback summary').click();
+  await expect(p.locator('.course-exam .written-answer-points')).toContainText('各别为散');
+  const examState=await p.evaluate(async()=>await(await import('/src/learningStore.ts')).loadLearning());
+  assert.equal(examState.courseAnswers.find(a=>a.id===`final-22-exam-${finalId}`).score,null);
+  await p.setViewportSize({width:360,height:800});assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  assert.deepEqual(errors,[]);
+  fs.writeFileSync('../verification/current-audit/source-review-ui.json',JSON.stringify({passed:true,checks:['closed-book corrected reference','exact source image link','final 22 points hidden before submission','points and citation shown after submission','written answer never auto-scored','held draft hidden and preserved','old exam preserved without presenting held answer','exam points hidden until submission','exam ability answer remains unscored','mobile width','no page errors']},null,2));
+  console.log('11 source-review UI checks passed');
+ }finally{await b.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

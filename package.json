@@ -1,0 +1,43 @@
+{
+  "name": "jingjing-youtiao",
+  "private": true,
+  "version": "0.4.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && node scripts/build-sw.mjs",
+    "preview": "vite preview",
+    "test:e2e": "node tests/browser.cjs",
+    "test:a11y": "node tests/accessibility.cjs",
+    "test:resilience": "node tests/resilience.cjs",
+    "test": "npm run test:release",
+    "test:core": "tsx tests/core.ts",
+    "test:learning": "node tests/learning.cjs",
+    "test:journey": "tsx tests/journey.ts",
+    "test:properties": "tsx tests/properties.ts",
+    "test:release": "node scripts/test-release.mjs",
+    "test:historical": "npm run test:core && npm run test:journey && npm run test:properties && npm run test:learning && node tests/calendar.cjs && node tests/offline.cjs && node tests/updates.cjs",
+    "test:pages": "node scripts/test-pages.mjs"
+  },
+  "dependencies": {
+    "dexie": "4.4.6",
+    "lucide-react": "^0.577.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router-dom": "7.18.4",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "axe-core": "4.13.0",
+    "tsx": "4.23.15",
+    "typescript": "~5.9.3",
+    "vite": "8.3.1"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
